@@ -34,5 +34,5 @@ if __name__ == "__main__":
     if not os.path.exists(flickr_folder):
         os.mkdir(flickr_folder) 
     
-    flickr = FlickrAPI('9b0ccc40e4f15810510b5212a8e6d1c5', 'e07d2b15bf994f1e', cache=True)
+    flickr = FlickrAPI('private_key', 'add_to_key', cache=True)
     get_from_flickr(flickr, keyward, image_count, flickr_folder)
