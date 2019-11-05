@@ -4,9 +4,8 @@ Created on Thu Oct 24 10:54:49 2019
 
 @author: valdis
 """
-import pandas as pd
-import cv2, os, math, numpy
-import matplotlib.pyplot as plt
+import cv2, os
+from tqdm import tqdm
     
 def get_image(image_path): 
 
@@ -18,15 +17,6 @@ def get_image(image_path):
         cv2.imwrite(image_folder + current_image, original_image)
 
     return original_image
-
-def PSNR(original_image, upscale_image):
-    
-    value_of_diff = original_image.astype(float) - upscale_image.astype(float)
-    flatten_value = value_of_diff.flatten('C')
-    RMSE_value = math.sqrt(numpy.mean(flatten_value ** 2.))
-    PSNR_value = 20 * math.log10(255. / RMSE_value) 
-    
-    return PSNR_value
 
 def image_sub_folders(scale_folder, upscale_folder, image_name, scale_value):
     
@@ -47,9 +37,8 @@ def image_sub_folders(scale_folder, upscale_folder, image_name, scale_value):
 if __name__ == "__main__":
     
     jpeg_quality = 80
-    PSNR_image = 'PSNR.png'
     possible_scales = (2,4,8,16,32)
-    image_folder = '/home/valdis/Desktop/Lab_1/image_folder/'
+    image_folder = '/home/valdis/Desktop/Lab_1_sign/flickr_folder/'
     
     work_dir = os.getcwd()
     scale_folder = os.path.join(work_dir,'scale_folder')
@@ -62,13 +51,10 @@ if __name__ == "__main__":
     if not os.path.exists(upscale_folder):
         os.mkdir(upscale_folder)    
     
-    PSNR_total = []
-    for current_image in set_of_images:
+    for current_image in tqdm(set_of_images):
         
-        print('Image :', current_image)
         original_image = get_image(image_folder + current_image)
         
-        PSNR_buff = []
         for scale_value in possible_scales:
             
             image_name = os.path.splitext(current_image)[0]
@@ -80,14 +66,11 @@ if __name__ == "__main__":
             upscale_image = cv2.imread(scale_path, cv2.IMREAD_UNCHANGED)
             upscale_image = cv2.resize(upscale_image, (0, 0), fx = scale_value, fy = scale_value, 
                                        interpolation = cv2.INTER_NEAREST)
-            cv2.imwrite(upscale_path, upscale_image)
             
-            PSNR_buff.append(PSNR(original_image, upscale_image))
+            cv2.imwrite(upscale_path, upscale_image)                       
+
         
-        PSNR_total.append(PSNR_buff)
+        cv2.imwrite(os.path.join(upscale_folder, image_name, image_name + '.jpeg'), original_image)        
+
     
-    PSNR_frame = pd.DataFrame(PSNR_total, columns = [str(scale) for scale in possible_scales])
-    
-    plt.ylabel('PSNR'); plt.xlabel('Scale')
-    PSNR_boxplot = PSNR_frame.boxplot(grid = False)
-    plt.savefig(os.path.join(work_dir, PSNR_image))
+
