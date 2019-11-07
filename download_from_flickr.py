@@ -28,8 +28,8 @@ def get_from_flickr(flickr, keyward, image_count, flickr_folder):
 
 if __name__ == "__main__":
     
-    image_count = 10; keyward = 'dog'
-    flickr_folder = '/home/valdis/Desktop/Lab_1/flickr_folder/'
+    image_count = 1000; keyward = 'car'
+    flickr_folder = '/home/valdis/Desktop/tfdataset/flickr_folder/'
         
     if not os.path.exists(flickr_folder):
         os.mkdir(flickr_folder) 
