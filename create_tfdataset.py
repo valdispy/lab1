@@ -1,60 +1,79 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Oct 31 20:54:59 2019
+Created on Wed Nov  6 22:52:49 2019
 
 @author: valdis
 """
-
 import os, glob
 import pandas as pd
 import tensorflow as tf
 tf.compat.v1.enable_eager_execution()
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt 
 
 def _parse_image_function(example_proto):
-    return tf.io.parse_single_example(example_proto, feature)
+    features = create_fetures(possible_scales)
+    return tf.io.parse_single_example(example_proto, features)
+
+def create_fetures(possible_scales):
+    features = {'original_image': tf.io.FixedLenFeature([], tf.string), 
+                'image_name': tf.io.FixedLenFeature([], tf.string),
+                'height': tf.io.FixedLenFeature([], tf.int64),
+                'width': tf.io.FixedLenFeature([], tf.int64)}
+    for scale in possible_scales:
+        features.update({'scale_image_' + scale: tf.io.FixedLenFeature([], tf.string)})
+    return features
     
-def loss_functions(original_image, upscale_image): 
-    original_image = tf.cast(original_image, tf.int64); upscale_image = tf.cast(upscale_image, tf.int64)
+def loss_functions(original_image, upscale_image, total_length): 
+    
     psnr_value = tf.image.psnr(original_image, upscale_image, max_val=255).numpy()
     content_loss = tf.reduce_sum(tf.square(tf.subtract(original_image, upscale_image))).numpy()   
-    return psnr_value, content_loss
-
+    
+    original_gram_matrix = tf.reduce_sum(tf.matmul(original_image, original_image, transpose_b=True))/total_length
+    upscale_gram_matrix = tf.reduce_sum(tf.matmul(upscale_image,upscale_image,transpose_b=True))/total_length
+    texture_loss = tf.keras.backend.mean(tf.square(original_gram_matrix-upscale_gram_matrix)).numpy()
+    
+    return psnr_value, content_loss/total_length, texture_loss/total_length
+   
 if __name__ == "__main__":
     
     PSNR_image = 'PSNR.png'
     content_image = 'content_loss.png'
+    texture_image = 'texture_loss.png'
     
     work_dir = os.getcwd()
     tfrecords_folder = os.path.join(work_dir, 'tf_folder')
-    possible_scales = (2,4,8,16,32)
-    
+    possible_scales = [str(scale) for scale in [2,4,8,16,32]]
     tfrerods_list = glob.glob(tfrecords_folder + '/*')
     tfdataset = tf.data.TFRecordDataset(tfrerods_list)
     
-    feature = {'original_image': tf.io.FixedLenFeature([], tf.string), 
-               'image_name': tf.io.FixedLenFeature([], tf.string)}
-    for scale in possible_scales:
-        feature.update({'scale_image_' + str(scale): tf.io.FixedLenFeature([], tf.string)})
-    
     parsed_image_dataset = tfdataset.map(_parse_image_function)
     
-    PSNR_tfdataset = []; content_tfdataset = []
+    PSNR_tfdataset = []; content_tfdataset = []; texture_tfdataset = []
     for image_features in parsed_image_dataset:
         
-        print('Image =',image_features['image_name'].numpy().decode('utf-8'))
-        original_image = tf.io.decode_jpeg(image_features['original_image']).numpy()
+        print(image_features['image_name'].numpy().decode('utf-8'))
+        original_image = tf.io.decode_jpeg(image_features['original_image'])
+        original_image = tf.cast(original_image, tf.int64).numpy()
+    
+        height = image_features['height'].numpy(); width = image_features['width'].numpy() 
+        total_length = 3 * height * width
         
-        PSNR_tfrecord = []; content_tfrecord = []
-        for scale_value in possible_scales: 
-            upscale_image = tf.io.decode_jpeg(image_features['scale_image_' + str(scale_value)]).numpy()
-            psnr_value, content_loss = loss_functions(original_image, upscale_image)
-            PSNR_tfrecord.append(psnr_value); content_tfrecord.append(content_loss)
+        PSNR_tfrecord = []; content_tfrecord = []; texture_tfrecord = []
+        for scale_value in possible_scales:
+            upscale_image = tf.io.decode_jpeg(image_features['scale_image_' + str(scale_value)])
+            upscale_image = tf.cast(upscale_image, tf.int64).numpy()
             
-        PSNR_tfdataset.append(PSNR_tfrecord); content_tfdataset.append(content_tfrecord)
+            psnr_value, content_loss, texture_loss = loss_functions(original_image, upscale_image, total_length)
         
-    PSNR_frame = pd.DataFrame(PSNR_tfdataset, columns = [str(scale) for scale in possible_scales])
-    content_frame = pd.DataFrame(content_tfdataset, columns = [str(scale) for scale in possible_scales])
+            PSNR_tfrecord.append(psnr_value); content_tfrecord.append(content_loss)
+            texture_tfrecord.append(texture_loss)
+           
+        PSNR_tfdataset.append(PSNR_tfrecord); content_tfdataset.append(content_tfrecord)
+        texture_tfdataset.append(texture_tfrecord)
+        
+    PSNR_frame = pd.DataFrame(PSNR_tfdataset, columns = possible_scales)
+    content_frame = pd.DataFrame(content_tfdataset, columns = possible_scales)
+    texture_frame = pd.DataFrame(texture_tfdataset, columns = possible_scales)
     
     plt.figure()
     plt.ylabel('PSNR'); plt.xlabel('Scale')
@@ -65,3 +84,8 @@ if __name__ == "__main__":
     plt.ylabel('Content loss'); plt.xlabel('Scale')
     content_boxplot = content_frame.boxplot(grid = False)
     plt.savefig(os.path.join(work_dir, content_image))
+    
+    plt.figure()
+    plt.ylabel('Texture loss'); plt.xlabel('Scale')
+    texture_boxplot = texture_frame.boxplot(grid = False)
+    plt.savefig(os.path.join(work_dir, texture_image))
